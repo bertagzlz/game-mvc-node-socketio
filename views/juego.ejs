@@ -1,0 +1,256 @@
+<%- include('layout.ejs'); %>
+<!-- RECIBIMOS LOS DOS ARRAYS DE NODE (users y salas) Y LAS VARIABLES name, imagen-->
+<div class="container mt-4">
+
+    <div class="mt-8 p-2 bg-primary text-white rounded d-inline-flex">
+        <h2>Hola <%= user.name %></h2>
+        <img src="<%= user.imagen %>" name="avatar" id="avatar" alt="avatar" width="60px">
+    </div>
+
+    <div id="usuarios" class="container p-3 my-3 border ">
+        <div id="usuarios-row" class="row" >
+            <h4>Usuarios conectados</h4>
+                <div id="conectados" class="col" ondragstart="return dragStart(event)">
+                        <img id="<%= user.id %>" src="<%= user.imagen %>" name="<%= user.username %>" alt="avatar" width="80px"
+                             draggable="true">
+                </div>
+        </div>
+    </div>
+    <div class="container text-center">
+        <div class="row row-cols-1 row-cols-sm-2 row-cols-md-4">
+          <% salas.forEach(function(sala){ %>
+            <div class="col" >
+                    <p style="margin-bottom: 0.2rem"><%= sala.name %></p>
+                    <div class="progress barras simulacion">
+                        <!-- las barras van del 0-50%. width (porcentaje)=casillas-click/16/2-->
+                        <div id="<%= sala.id %>-s-0" class="progress-bar" role="progressbar" style="width: 50%" aria-valuenow="25" aria-valuemin="0" aria-valuemax="100"></div>
+                        <div id="<%= sala.id %>-s-1" class="progress-bar" role="progressbar" style="width: 50%" aria-valuenow="25" aria-valuemin="0" aria-valuemax="100"></div>
+                    </div>
+            <div class="sala" id="<%= sala.name %>"
+
+                         ondragenter="return dragEnter(event)"
+                         ondrop="return dragDrop(event)"
+                         ondragover="return dragOver(event)">
+            </div>
+                    <div class="progress barras">
+                        <!-- las barras van del 0-50%. width (porcentaje)=casillas-click/16/2-->
+                        <div id="<%= sala.id %>-0" class="progress-bar" role="progressbar" style="width: 0%" aria-valuenow="25" aria-valuemin="0" aria-valuemax="100"></div>
+                        <div id="<%= sala.id %>-1"class="progress-bar" role="progressbar" style="width: 0%" aria-valuenow="25" aria-valuemin="0" aria-valuemax="100"></div>
+                    </div>
+
+                    <div class="divBoard" id = "divBoard<%= sala.id %>"></div>
+           </div>
+          <% }); %>
+        </div>
+    </div>
+
+    <!-- TABLA INFERIOR PARA INDICAR LAS SUCESIVAS ASIGNACIONES DE usuario a sala de juego-->
+    <div id="items" hidden="hidden" class="container p-3 my-3 bg-dark text-white">
+        <span><button style="float:right" id="btnClearStorage" value="borrarDatos">borrar Datos</button>
+        <h4 id="estado">Usuarios asignados a salas</h4></span>
+        <table id="tablaItems"></table>
+    </div>
+</div>
+
+<script>
+    // change 'wss' to 'ws' for running without SSL):
+    //let serverURL = 'wss://' + window.location.hostname+':8443';
+    //let serverURL=window.location.hostname==='localhost'?'ws://'+window.location.hostname+':9090':'wss://'+window.location.hostname+':9090';
+    //let serverURL = 'ws://' + s;
+    //let serverURL = 'wss://game-mvc-node-socket-wss.onrender.com';
+    //console.log("Ws por: "+serverURL);
+    // let ws = new WebSocket("ws://localhost:9090"); // FUNCIONA BIEN EN LOCAL
+    // game-mvc-node-socket-wss.onrender.com
+    // let ws = new WebSocket("wss://game-mvc-node-socket.onrender.com");
+    // window.location.host contiene localhost:4111
+
+    // the webSocket connection:
+    let socket;
+    // otra opción interesante es: script... type="module" src=..socket.io.js
+
+
+
+
+
+    let playerColor = null; // necesario
+
+    users=JSON.parse('<%- JSON.stringify(users) %>');
+    let idJugador=JSON.parse('<%- JSON.stringify(user.id) %>');
+
+    function borrarTablero(partida) {
+    const dB=document.getElementById("divBoard"+partida.id);
+    // borra todos sus botones
+    while(dB.firstChild)
+        dB.removeChild (dB.firstChild)
+}
+    function dibujaTablero(partida) {
+    const dB=document.getElementById("divBoard"+partida.id);
+
+    // vuelve a dibujarlos
+    for (let i = 0; i < partida.balls; i++){
+        const b = document.createElement("button");
+        b.id = "ball" + (i);
+        b.tag = i
+        //b.textContent = i+1
+        b.style.width = "50px"
+        b.style.height = "50px"
+        b.style.background = "#ffffff"
+        b.addEventListener("click", e => {
+            //if (partida.jugadores.length===2){
+                b.style.background = playerColor
+                const payLoad = {
+                    "method": "play",
+                    "idJugador": idJugador,
+                    "idSala": partida.id,
+                    "idBall": b.tag,
+                    "color": playerColor
+                }
+                //ws.send(JSON.stringify(payLoad))
+            socket.emit("message",JSON.stringify(payLoad))
+            //}
+        })
+        dB.appendChild(b);
+    }
+}
+    function actualizaBarra(idSala,index, valor) {
+        let pb=document.getElementById(String(idSala)+'-'+index);
+        let pbs=document.getElementById(String(idSala)+'-s-'+index);
+        pb.style.width = String(valor)+"%";
+    }
+
+    // Venimos aquí con login. Le decimos al server que estamos.
+    function setup() {
+
+        socket = io.connect(); // envía connection al servidor
+        // y si se cierra este cliente se envía disconnect al servidor
+
+        openConnection();
+        socket.on("message", readIncomingMessage);
+    }
+
+    function openConnection() {
+        console.log("Jugador id Set successfully " + idJugador);
+        const payLoad = { "method": "connect", "idJugador": idJugador }
+        //ws.send(JSON.stringify(payLoad));
+        socket.emit("message",JSON.stringify(payLoad));
+    }
+
+    const readIncomingMessage= (message) => {
+        const response = JSON.parse(message);
+
+        //   H A   H E C H O   L O G I N --> U N   J U G A D O R   S E   C O N E C T A
+        // entra a conectados, las otras ventanas deben tener este avatar
+        if (response.method === "updateAvatarEnConectados") {
+            idJugador = response.idJugador;
+            console.log("updateAvatarEnConectados " + idJugador)
+            updateAvatarEnConectados(idJugador, response.draggable);
+        }
+        if (response.method === "getAvataresDeLosJugando") {
+            console.log("getAvataresDeLosJugando en sala correspondiente " + idJugador)
+            mostrarEnSala(response.idJugador,response.idSala);
+        }
+
+        //   U N   J U G A D O R   W A N T   T O   J O I N
+        // entra a jugar en partida,
+        if (response.method === "updateMiAvatarAlResto") {
+            idRecentJoined = response.idJugador;
+            console.log("updateMiAvatarAlResto set successfully " + idRecentJoined)
+            updateMiAvatarAlResto(idRecentJoined,response.idSala);
+        }
+        // entra a jugar en partida, sale de su barra de conectados con Drag&drop pero el resto de usuarios
+        // debe saberlo para borrarlo también
+        if (response.method === "borraMiAvatarEnRestoConectados") {
+            idJugador = response.idJugador;
+            console.log("borra avatar del " + idJugador+ " en las otra ventanas conectadas")
+            if (document.getElementById(idJugador) !=null) {
+                let node = document.getElementById(idJugador);
+                // borrar esto: <img id="1" src="./images/avatar1.jpg" ...
+                document.getElementById("conectados").removeChild(node);
+            }
+        }
+        // pone color y dibuja tablero, crea eventos click para jugar
+        if (response.method === "joined"){
+            const partida = response.partida;
+            idJugador=response.idJugador;
+            //si pongo esto usa siempre el último usuario
+            // const clientId=response.clientId;
+            // ojo con las variables.....clientId es global
+
+            partida.jugadores.forEach (c => {
+                // A ESTE JUGADOR LE ASIGNA COLOR
+                if (c.id === idJugador) playerColor = c.color;
+            });
+            // borra todos sus botones
+            borrarTablero(partida)
+            // vuelve a dibujarlos
+            dibujaTablero(partida)
+        }
+
+        // saca de la partida
+        if (response.method === "disjoin") {
+            let partida=response.partida;
+
+            // removeChild de la sala, nada más
+            quitarAvatarDeSala(response.clientAQuitar,partida.id);
+
+            // borra todos sus botones
+            borrarTablero(partida);
+            //document.getElementById("divboard"+partida.id).remove();
+            // vuelve a dibujarlos
+            //dibujaTablero(partida);
+            actualizaBarra(partida.id,0,0);
+            actualizaBarra(partida.id,1,0);
+            document.getElementById(idJugador).style.border="";
+
+            /* si no está en usuarios locales y se acababa de registrar no puede seguir en LS
+            porque no se almacena en users.js (servidor)
+            Mal truco,: los nuevos registrados se identifican por su color empiez por #....
+            * */
+            let user=users.find(u=>u.id===Number(response.clientAQuitar));
+            if (user.color.substr(0,1)==='#')
+                deleteItem(response.clientAQuitar);
+        }
+
+        //update BOLAS
+        if (response.method === "update") { //{1=> "red", 1} ojo no admite Map
+            const estados=response.estados;
+            if (!estados) return;
+            for(const key of Object.keys(estados)) {
+                const ballObject = document.getElementById("ball" + key);
+                ballObject.style.backgroundColor = estados[key];
+            }
+        }
+
+        //newPoint
+        if (response.method === "newPoint") {
+            // no quiero al idJugador, todas las barras llevan 0 y 1
+            let pb=document.getElementById(String(response.idSala)+'-'+response.index);
+            let pbs=document.getElementById(String(response.idSala)+'-s-'+response.index);
+            let length = pb.style.width.length;
+            let porcentaje = Number(pb.style.width.substr(0, length - 1));
+            pb.style.width = String(porcentaje + 100 / 16 ) + "%";
+
+
+            pb.style.backgroundColor=response.color;
+            pbs.style.backgroundColor=response.color;
+
+
+        }
+
+        //win
+        if (response.method === "win"){
+            const idJugador = response.idJugador;
+            document.getElementById(idJugador).style.border="6px dotted #00ff00";
+            let user=users.find(u=>u.id===Number(idJugador));
+            alert("Gana el jugador: ("+user.id+") "+user.name);
+        }
+    }
+
+    // add a listener for the page to load:
+    window.addEventListener('DOMContentLoaded', () => setup());
+</script>
+<script src="/socket.io/socket.io.js"></script>
+<script src="js/dragdrop.js"></script>
+<!--<script src="js/localStorage.js"></script>-->
+</body>
+</html>
